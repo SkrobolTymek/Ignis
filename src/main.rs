@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 use wgpu;
 use winit::{
-    event::{ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode, WindowEvent},
+    event::{Event, KeyboardInput, VirtualKeyCode, ElementState, ModifiersState, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::Window,
+    window::{Window, WindowBuilder},
 };
 
 // 🧱 Basic Architecture
@@ -54,8 +54,8 @@ impl TerminalApp {
                     ..
                 } => {
                     terminal.handle_input(input);
-                    state.request_redraw();
-                }
+                    state.window().request_redraw();
+                },
 
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
@@ -70,7 +70,7 @@ impl TerminalApp {
                 }
 
                 Event::MainEventsCleared => {
-                    state.request_redraw();
+                    state.window().request_redraw();
                 }
 
                 _ => {}
@@ -86,8 +86,8 @@ mod terminal {
     #[derive(Debug, Clone, Copy)]
     pub struct Cell {
         pub char: char,
-        pub fg_color: [f32; 3],
-        pub bg_color: [f32; 3],
+        pub fg_color: [f32; 4],  // Changed to RGBA
+        pub bg_color: [f32; 4],  // Changed to RGBA
     }
 
     pub struct Terminal {
@@ -104,8 +104,8 @@ mod terminal {
         pub fn new(width: usize, height: usize) -> Self {
             let default_cell = Cell {
                 char: ' ',
-                fg_color: [1.0, 1.0, 1.0],
-                bg_color: [0.0, 0.0, 0.0],
+                fg_color: [1.0, 1.0, 1.0, 1.0],  // Added alpha
+                bg_color: [0.0, 0.0, 0.0, 1.0],  // Added alpha
             };
 
             let cells = vec![vec![default_cell; width]; height];
@@ -126,32 +126,32 @@ mod terminal {
             if let Some(keycode) = input.virtual_keycode {
                 match input.state {
                     ElementState::Pressed => match keycode {
-                        VirtualKeyCode::Back => self.handle_backspace(),
-                        VirtualKeyCode::Delete => self.handle_delete(),
-                        VirtualKeyCode::Left => self.handle_move_left(),
-                        VirtualKeyCode::Right => self.handle_move_right(),
-                        VirtualKeyCode::Up => self.handle_move_up(),
-                        VirtualKeyCode::Down => self.handle_move_down(),
-                        VirtualKeyCode::Return => self.handle_newline(),
-                        VirtualKeyCode::Home => self.handle_home(),
-                        VirtualKeyCode::End => self.handle_end(),
-                        _ => self.handle_insert_char(keycode),
+                        VirtualKeyCode::Back => self.backspace(),
+                        VirtualKeyCode::Delete => self.delete(),
+                        VirtualKeyCode::Left => self.move_left(),
+                        VirtualKeyCode::Right => self.move_right(),
+                        VirtualKeyCode::Up => self.move_up(),
+                        VirtualKeyCode::Down => self.move_down(),
+                        VirtualKeyCode::Return => self.newline(),
+                        VirtualKeyCode::Home => self.home(),
+                        VirtualKeyCode::End => self.end(),
+                        _ => self.insert_char(keycode),
                     },
                     _ => {}
                 }
             }
         }
 
-        fn handle_insert_char(&mut self, keycode: VirtualKeyCode) {
+        fn insert_char(&mut self, keycode: VirtualKeyCode) {
             if let Some(c) = self.keycode_to_char(keycode) {
                 if self.cursor_x >= self.width {
-                    self.handle_newline();
+                    self.newline();
                 }
 
                 self.cells[self.cursor_y][self.cursor_x] = Cell {
                     char: c,
-                    fg_color: [1.0, 1.0, 1.0],
-                    bg_color: [0.0, 0.0, 0.0],
+                    fg_color: [1.0, 1.0, 1.0, 1.0],
+                    bg_color: [0.0, 0.0, 0.0, 1.0],
                 };
                 self.cursor_x += 1;
             }
@@ -212,16 +212,89 @@ mod terminal {
             }
         }
 
-        // ... (keep all other terminal methods the same)
+        fn backspace(&mut self) {
+            if self.cursor_x > 0 {
+                self.cursor_x -= 1;
+                self.cells[self.cursor_y][self.cursor_x] = Cell {
+                    char: ' ',
+                    fg_color: [1.0, 1.0, 1.0, 1.0],
+                    bg_color: [0.0, 0.0, 0.0, 1.0],
+                };
+            }
+        }
+
+        fn delete(&mut self) {
+            self.cells[self.cursor_y][self.cursor_x] = Cell {
+                char: ' ',
+                fg_color: [1.0, 1.0, 1.0, 1.0],
+                bg_color: [0.0, 0.0, 0.0, 1.0],
+            };
+        }
+
+        fn move_left(&mut self) {
+            if self.cursor_x > 0 {
+                self.cursor_x -= 1;
+            }
+        }
+
+        fn move_right(&mut self) {
+            if self.cursor_x < self.width - 1 {
+                self.cursor_x += 1;
+            }
+        }
+
+        fn move_up(&mut self) {
+            if self.cursor_y > 0 {
+                self.cursor_y -= 1;
+            }
+        }
+
+        fn move_down(&mut self) {
+            if self.cursor_y < self.height - 1 {
+                self.cursor_y += 1;
+            }
+        }
+
+        fn newline(&mut self) {
+            self.cursor_x = 0;
+            if self.cursor_y < self.height - 1 {
+                self.cursor_y += 1;
+            } else {
+                self.scroll();
+            }
+        }
+
+        fn home(&mut self) {
+            self.cursor_x = 0;
+        }
+
+        fn end(&mut self) {
+            self.cursor_x = self.width - 1;
+        }
+
+        fn scroll(&mut self) {
+            let row = self.cells.remove(0);
+            self.scrollback.push_back(row);
+            self.cells.push(vec![
+                Cell {
+                    char: ' ',
+                    fg_color: [1.0, 1.0, 1.0, 1.0],
+                    bg_color: [0.0, 0.0, 0.0, 1.0],
+                };
+                self.width
+            ]);
+        }
     }
 }
+
+
 
 // 🎨 Rendering
 mod render {
     use super::*;
-    use wgpu::util::DeviceExt;
-    use wgpu_glyph::{GlyphBrush, GlyphBrushBuilder, Section, Text};
+    use wgpu_glyph::{ab_glyph, GlyphBrush, GlyphBrushBuilder, Section, Text};
 
+    
     pub struct RenderState {
         surface: wgpu::Surface,
         device: wgpu::Device,
@@ -234,13 +307,13 @@ mod render {
     impl RenderState {
         pub async fn new(window: Window) -> Self {
             let size = window.inner_size();
-
+            
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                 backends: wgpu::Backends::all(),
                 ..Default::default()
             });
             let surface = unsafe { instance.create_surface(&window) }.unwrap();
-
+            
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
@@ -251,14 +324,11 @@ mod render {
                 .expect("Failed to find an appropriate adapter");
 
             let (device, queue) = adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: None,
-                        features: wgpu::Features::empty(),
-                        limits: wgpu::Limits::default(),
-                    },
-                    None,
-                )
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: None,
+                    features: wgpu::Features::empty(),
+                    limits: wgpu::Limits::default(),
+                }, None)
                 .await
                 .unwrap();
 
@@ -274,9 +344,10 @@ mod render {
             surface.configure(&device, &config);
 
             // Create glyph brush for text rendering
-            let glyph_brush =
-                GlyphBrushBuilder::using_font_bytes(include_bytes!("FiraMono-Regular.ttf"))
-                    .build(&device, config.format);
+            let font_data = include_bytes!("SpecialGothic-Regular.ttf");
+            let font = ab_glyph::FontArc::try_from_slice(font_data).unwrap();
+            let glyph_brush = GlyphBrushBuilder::using_font(font)
+                .build(&device, config.format);
 
             Self {
                 surface,
@@ -293,69 +364,93 @@ mod render {
                 self.config.width = new_size.width;
                 self.config.height = new_size.height;
                 self.surface.configure(&self.device, &self.config);
-                self.glyph_brush
-                    .resize_view(new_size.width, new_size.height);
             }
         }
 
-        pub fn request_redraw(&self) {
-            self.window.request_redraw();
+        pub fn window(&self) -> &Window {
+            &self.window
         }
 
         pub fn render(&mut self, terminal: &terminal::Terminal) -> Result<(), wgpu::SurfaceError> {
             let output = self.surface.get_current_texture()?;
-            let view = output
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+            let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
             // Clear screen
             {
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Render Encoder"),
-                        });
-
-                {
-                    let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: true,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                    });
-                }
-
-                self.queue.submit(std::iter::once(encoder.finish()));
+                let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
             }
 
-            // Render text
+            // Render all terminal cells
+            let cell_width = 10.0;
+            let cell_height = 20.0;
+            let font_size = 16.0;
+
+            for (y, row) in terminal.cells.iter().enumerate() {
+                for (x, cell) in row.iter().enumerate() {
+                    if cell.char != ' ' {
+                        self.glyph_brush.queue(Section {
+                            screen_position: (
+                                x as f32 * cell_width + 10.0,
+                                y as f32 * cell_height + 10.0,
+                            ),
+                            bounds: (f32::INFINITY, f32::INFINITY),
+                            text: vec![Text::new(&cell.char.to_string())
+                                .with_color(cell.fg_color)
+                                .with_scale(font_size)],
+                            ..Section::default()
+                        });
+                    }
+                }
+            }
+
+            // Draw cursor
             self.glyph_brush.queue(Section {
-                screen_position: (30.0, 30.0),
+                screen_position: (
+                    terminal.cursor_x as f32 * cell_width + 10.0,
+                    terminal.cursor_y as f32 * cell_height + 10.0,
+                ),
                 bounds: (f32::INFINITY, f32::INFINITY),
-                text: vec![Text::new("Hello Terminal!")
+                text: vec![Text::new("_")
                     .with_color([1.0, 1.0, 1.0, 1.0])
-                    .with_scale(24.0)],
+                    .with_scale(font_size)],
                 ..Section::default()
             });
 
+
+
+            // Draw queued text
             self.glyph_brush
                 .draw_queued(
                     &self.device,
                     &mut self.queue,
                     &view,
-                    self.config.width,
-                    self.config.height,
+                    wgpu_glyph::orthographic_projection(self.config.width, self.config.height),
+                    wgpu_glyph::ScreenSize {
+                        width: self.config.width as f32,
+                        height: self.config.height as f32,
+                    },
+                    wgpu_glyph::Scale::uniform(font_size),
                 )
                 .expect("Draw queued");
 
+            self.queue.submit(std::iter::once(encoder.finish()));
             output.present();
-
+            
             Ok(())
         }
     }
