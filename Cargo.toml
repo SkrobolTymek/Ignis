@@ -4,10 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wgpu = "0.17"
-winit = "0.28"
-bytemuck = "1.12"
-pollster = "0.3"
-glyph_brush = "0.7"
-glyph_brush_wgpu = "0.17"
-wgpu_glyph = "0.17"
+winit = "0.30.9"
