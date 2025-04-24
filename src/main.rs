@@ -1,25 +1,36 @@
-mod app;
-mod terminal;
-mod pty;
-mod theme;
-mod completer;
-mod commands;
+use winit::{
+    event::{self, *},
+    event_loop::{self, EventLoopBuilder},
+    keyboard::{KeyCode, PhysicalKey},
+    window::WindowBuilder,
+};
 
-use app::IgnisApp;
-use eframe::{egui, Renderer};
+#[derive(Debug, Clone, Copy)]
+enum CustomEvent {
+    Timer,
+}
 
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 700.0])
-            .with_title("Ignis Terminal"),
-        renderer: Renderer::Glow,
-        ..Default::default()
-    };
+fn main() {
+    env_logger::init();
 
-    eframe::run_native(
-        "Ignis Terminal",
-        options,
-        Box::new(|cc| Box::new(IgnisApp::new(cc))),
-    )
+    let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event()
+        .build()
+        .unwrap();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    
+    let event_loop_proxy = event_loop.create_proxy();
+
+    std::thread::spawn(move || loop{
+        std::thread::sleep(std::time::Duration::from_millis(17));
+        event_loop_proxy.send_event(CustomEvent::Timer).ok();
+    });
+
+    event_loop.run(move |event, elwt | match event{
+        Event::UserEvent(..)=>{
+            // println!("new frame");
+        },
+        _=>{
+
+        }
+    }).expect("error");
 }
