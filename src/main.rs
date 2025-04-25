@@ -27,7 +27,19 @@ fn main() {
 
     event_loop.run(move |event, elwt | match event{
         Event::UserEvent(..)=>{
-            // println!("new frame");
+            // println!("new frame")
+        },
+        Event::WindowEvent{
+            window_id,
+            ref event
+        } if window_id == window.id() => match event {
+
+            WindowEvent::CloseRequested => {
+                println!("Closing lol");
+                elwt.exit();
+            }
+
+            _=>(),
         },
         _=>{
 
